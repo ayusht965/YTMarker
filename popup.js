@@ -56,10 +56,17 @@ const onDelete = async e => {
 
   bookmarkElementToDelete.parentNode.removeChild(bookmarkElementToDelete);
 
-  chrome.tabs.sendMessage(activeTab.id, {
-    type: "DELETE",
-    value: bookmarkTime,
-  }, viewBookmarks);
+  chrome.storage.sync.get([activeTab.url], function(result) {
+    let bookmarksArray = result[activeTab.url];
+    let bookmarkIndex = bookmarksArray.findIndex(bookmark => bookmark.time === bookmarkTime);
+
+    if (bookmarkIndex !== -1) {
+      bookmarksArray.splice(bookmarkIndex, 1);
+      chrome.storage.sync.set({[activeTab.url]: bookmarksArray}, function() {
+        console.log('Bookmark is deleted from the storage.');
+      });
+    }
+  });
 };
 
 const setBookmarkAttributes =  (src, eventListener, controlParentElement) => {

@@ -1,68 +1,78 @@
-(() => {
-    let youtubeLeftControls, youtubePlayer;
-    let currentVideo = "";
-    let currentVideoBookmarks = [];
+let youtubeLeftControls, youtubePlayer;
+let currentVideo = "";
+let currentVideoBookmarks = [];
+
+const fetchBookmarks = (callback) => {
+  chrome.storage.sync.get([currentVideo], (obj) => {
+    const bookmarks = obj[currentVideo] ? JSON.parse(obj[currentVideo]) : [];
+    callback(bookmarks);
+  });
+};
   
-    const fetchBookmarks = () => {
-      return new Promise((resolve) => {
-        chrome.storage.sync.get([currentVideo], (obj) => {
-          resolve(obj[currentVideo] ? JSON.parse(obj[currentVideo]) : []);
+const addNewBookmarkEventHandler = () => {
+    const currentTime = youtubePlayer.currentTime;
+    const newBookmark = {
+      time: currentTime,
+      desc: "Bookmark at " + getTime(currentTime),
+    };
+    fetchBookmarks((bookmarks) => {
+        currentVideoBookmarks = bookmarks;
+    
+        chrome.storage.sync.set({
+          [currentVideo]: JSON.stringify([...currentVideoBookmarks, newBookmark].sort((a, b) => a.time - b.time))
         });
-      });
+    });
     };
   
-    const addNewBookmarkEventHandler = async () => {
-      const currentTime = youtubePlayer.currentTime;
-      const newBookmark = {
-        time: currentTime,
-        desc: "Bookmark at " + getTime(currentTime),
-      };
-  
-      currentVideoBookmarks = await fetchBookmarks();
-  
-      chrome.storage.sync.set({
-        [currentVideo]: JSON.stringify([...currentVideoBookmarks, newBookmark].sort((a, b) => a.time - b.time))
-      });
-    };
-  
-    const newVideoLoaded = async () => {
-      const bookmarkBtnExists = document.getElementsByClassName("bookmark-btn")[0];
-  
-      currentVideoBookmarks = await fetchBookmarks();
+    const newVideoLoaded =  () => {
+        const bookmarkBtnExists = document.querySelector(".bookmark-btn");
   
       if (!bookmarkBtnExists) {
         const bookmarkBtn = document.createElement("img");
   
         bookmarkBtn.src = chrome.runtime.getURL("assets/bookmark.png");
-        bookmarkBtn.className = "ytp-button " + "bookmark-btn";
+        bookmarkBtn.className = "ytp-button bookmark-btn";
         bookmarkBtn.title = "Click to bookmark current timestamp";
   
-        youtubeLeftControls = document.getElementsByClassName("ytp-left-controls")[0];
-        youtubePlayer = document.getElementsByClassName('video-stream')[0];
-  
+        youtubeLeftControls = document.querySelector(".ytp-left-controls");
+    youtubePlayer = document.querySelector('.video-stream');
+    if (youtubeLeftControls) {
         youtubeLeftControls.appendChild(bookmarkBtn);
         bookmarkBtn.addEventListener("click", addNewBookmarkEventHandler);
       }
+      fetchBookmarks((bookmarks) => {
+        currentVideoBookmarks = bookmarks;
+      });
     };
   
-    chrome.runtime.onMessage.addListener((obj, sender, response) => {
-      const { type, value, videoId } = obj;
-  
-      if (type === "NEW") {
-        currentVideo = videoId;
-        newVideoLoaded();
-      } else if (type === "PLAY") {
-        youtubePlayer.currentTime = value;
-      } else if ( type === "DELETE") {
-        currentVideoBookmarks = currentVideoBookmarks.filter((b) => b.time != value);
+    const handleMessage = (obj, sendResponse) => {
+        const { type, value, videoId } = obj;
+      
+        if (type === "NEW") {
+          currentVideo = videoId;
+          newVideoLoaded();
+        } else if (type === "PLAY") {
+          youtubePlayer.currentTime = value;
+        } else if (type === "DELETE") {
+          fetchBookmarks((bookmarks) => {
+            currentVideoBookmarks = bookmarks.filter((b) => b.time != value);
         chrome.storage.sync.set({ [currentVideo]: JSON.stringify(currentVideoBookmarks) });
   
-        response(currentVideoBookmarks);
-      }
+        sendResponse({status: 'ok'}); // send back a response
     });
+  }
+};
   
+    // Here, chrome.runtime.onMessage is used to listen for messages sent from extension pages (e.g., popup or options page)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    handleMessage(message, sendResponse);
+    return true;  // this will keep the message channel open until `sendResponse` is called
+  });
+  
+  window.addEventListener('load', (event) => {
     newVideoLoaded();
-  })();
+  });
+};
   
   const getTime = t => {
     var date = new Date(0);
